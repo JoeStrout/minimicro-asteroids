@@ -1,5 +1,7 @@
 import "listUtil"
 import "mathUtil"
+import "sounds"
+import "chars"
 
 clear
 sheet2x = file.loadImage("pics/Asteroids-2X.png")
@@ -18,13 +20,17 @@ for type in range(0,2)
 end for
 
 // Prepare sounds
+pew = new Sound
+pew.init 0.25, [2000,100], [1,0]
 bipBoop = [new Sound, new Sound]
 bipBoop[0].init 0.1, noteFreq(42), [0.3,0]
 bipBoop[1].init 0.1, noteFreq(44), [0.3,0]
+hit = file.loadSound("/sys/sounds/hit.wav")
 
 GameSprite = new Sprite
 GameSprite.scale = 0.5
 GameSprite.v = null  // x and y
+GameSprite.destroyed = false
 GameSprite.update = function(dt)
 	self.x = self.x + self.v.x * dt
 	if self.x > 1040 then
@@ -41,9 +47,11 @@ GameSprite.update = function(dt)
 end function
 GameSprite.init = function
 	self.v = {"x":0, "y":0}
+	self.destroyed = false
 	display(4).sprites.push self
 end function
 GameSprite.destroy = function
+	self.destroyed = true
 	display(4).sprites.removeVal self
 end function
 
@@ -85,6 +93,7 @@ ship.update = function(dt)
 		b.y = self.y + sin(radians)*16
 		b.v.x = self.v.x + cos(radians)*500
 		b.v.y = self.v.y + sin(radians)*500
+		pew.play
 	end if
 	self.fireWasPressed = fireIsPressed
 	
@@ -96,8 +105,19 @@ end function
 ship.destroy = function
 	super.destroy
 	makeDebris self
+	globals.lives = lives - 1
+	globals.respawnTime = time + 3
+	drawScore
+end function
+ship.respawn = function
+	self.x = 480
+	self.y = 320
+	self.rotation = 0
+	self.init
+	globals.respawnTime = 0
 end function
 ship.init
+respawnTime = 0
 
 TimedSprite = new GameSprite
 TimedSprite.despawnTime = 0
@@ -138,21 +158,27 @@ Rock.init = function(size=0)
 end function
 Rock.destroy = function
 	super.destroy
+	hit.play 0.7, (self.x - 480)/480, 0.5 + 0.2*self.size
 	makeDebris self
 	if self.size < 2 then
 		// break into two rocks of the next size down
 		Rock.make self.size+1, self
 		Rock.make self.size+1, self
 	end if
+	heartbeat.updateInterval
 end function
 Rock.update = function(dt)
 	self.rotation = self.rotation + self.spin * dt
-	if self.overlaps(ship) then
+	if self.overlaps(ship) and not ship.destroyed then
 		ship.destroy
 		self.destroy
 	else
 		for b in Bullet.instances
-			if self.contains(b) then self.destroy	
+			if self.contains(b) then
+				addPoints 50 + 100 * self.size
+				self.destroy
+				b.destroy
+			end if
 		end for	
 	end if
 	super.update dt
@@ -186,6 +212,14 @@ heartbeat = {}
 heartbeat.nextPlayTime = 0
 heartbeat.which = 0
 heartbeat.interval = 0.75
+heartbeat.updateInterval = function
+	// count rocks to adjust heartbeat
+	count = 0
+	for sp in display(4).sprites
+		if sp isa Rock then count = count + 1
+	end for
+	self.interval = mathUtil.clamp(1.25 - count * 0.1, 0.25, 1.25)
+end function
 heartbeat.update = function(dt)
 	if time > self.nextPlayTime then
 		bipBoop[self.which].play
@@ -194,11 +228,26 @@ heartbeat.update = function(dt)
 	end if
 end function
 
+drawScore = function
+	text.row = 25; text.column = 4
+	print ("000000" + score)[-6:] + "   " + 
+	chars.figureStanding * lives + "   "
+end function
+
+addPoints = function(points)
+	globals.score = score + points
+	drawScore
+end function
+
 // Board setup
 ship.reset
 for i in range(0,7)
 	Rock.make
 end for
+heartbeat.updateInterval
+score = 0
+lives = 2
+drawScore
 
 // Main loop
 lastTime = time
@@ -209,4 +258,8 @@ while true
 		sp.update dt
 	end for
 	heartbeat.update dt
+	if ship.destroyed and respawnTime and time > respawnTime then
+		if lives < 0 then break
+		ship.respawn
+	end if
 end while
