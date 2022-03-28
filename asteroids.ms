@@ -4,6 +4,7 @@ import "sounds"
 import "chars"
 
 clear
+Sound.stopAll
 sheet2x = file.loadImage("pics/Asteroids-2X.png")
 images = {}
 images.ship = sheet2x.getImage(64*3, 0, 96, 64)
@@ -26,6 +27,9 @@ bipBoop = [new Sound, new Sound]
 bipBoop[0].init 0.1, noteFreq(42), [0.3,0]
 bipBoop[1].init 0.1, noteFreq(44), [0.3,0]
 hit = file.loadSound("/sys/sounds/hit.wav")
+engineNoise = new Sound
+engineNoise.init 3, 1, 1, Sound.noiseWave
+engineNoise.loop = true
 
 GameSprite = new Sprite
 GameSprite.scale = 0.5
@@ -60,13 +64,15 @@ zeroZero = {"x":0, "y":0}
 ship = new GameSprite
 ship.image = images.ship
 ship.acceleration = 2000  // pixels/sec/sec
-ship.deceleration = 300   // pixels/sec/sec
+ship.deceleration = 100   // pixels/sec/sec
+ship.maxSpeed = 1200 // pixels/sec
 ship.turnRate = 720  // degrees/sec
 ship.fireWasPressed = false
 ship.localBounds = new Bounds
 ship.localBounds.width = 64
 ship.localBounds.height = 32
 ship.tint = color.lime
+ship.thrusting = false
 ship.reset = function
 	self.x = 480
 	self.y = 320
@@ -83,41 +89,66 @@ ship.update = function(dt)
 	radians = self.rotation * pi/180
 	self.v.x = self.v.x + cos(radians) * thrust * self.acceleration * dt
 	self.v.y = self.v.y + sin(radians) * thrust * self.acceleration * dt
+	if thrust and not self.thrusting then
+		self.image = images.shipThrusting
+		engineNoise.play 0.1
+		self.thrusting = true
+	else if self.thrusting and not thrust then
+		self.image = images.ship
+		engineNoise.stop
+		self.thrusting = false
+	end if
 	
 	// fire bullets
-	fireIsPressed = key.pressed("space")
+	fireIsPressed = key.pressed("space") or
+	key.pressed("joystick button 0") or
+	key.pressed("joystick button 1")
 	if fireIsPressed and not self.fireWasPressed then
 		b = new Bullet
 		b.init
+		b.tint = self.tint
 		b.x = self.x + cos(radians)*16
 		b.y = self.y + sin(radians)*16
 		b.v.x = self.v.x + cos(radians)*500
 		b.v.y = self.v.y + sin(radians)*500
-		pew.play
+		pew.play 1, (self.x - 480)/480
 	end if
 	self.fireWasPressed = fireIsPressed
 	
-	// apply friction
+	// apply friction and max speed
 	mathUtil.moveTowardsXY self.v, zeroZero, self.deceleration * dt
+	speed = sqrt(self.v.x^2 + self.v.y^2)
+	if speed > self.maxSpeed then
+		f = self.maxSpeed / speed
+		self.v.x = self.v.x * f
+		self.v.y = self.v.y * f
+	end if
 	
 	super.update dt
 end function
 ship.destroy = function
 	super.destroy
+	engineNoise.stop
 	makeDebris self
 	globals.lives = lives - 1
 	globals.respawnTime = time + 3
 	drawScore
 end function
 ship.respawn = function
+	if not safeToRespawn then return // not yet!
 	self.x = 480
 	self.y = 320
 	self.rotation = 0
 	self.init
 	globals.respawnTime = 0
 end function
-ship.init
-respawnTime = 0
+ship.respawnArea = new Bounds
+ship.respawnArea.x = 480
+ship.respawnArea.y = 320
+ship.respawnArea.width = 150
+ship.respawnArea.height = 150
+
+respawnTime = 1
 
 TimedSprite = new GameSprite
 TimedSprite.despawnTime = 0
@@ -197,6 +228,13 @@ Rock.make = function(size=0, position=null)
 	rock.v.y = (rnd-0.5) * 300
 end function
 
+safeToRespawn = function
+	for sp in display(4).sprites
+		if sp isa Rock and sp.overlaps(ship.respawnArea) then return false
+	end for
+	return true
+end function
+
 makeDebris = function(pos)
 	for i in range(10)
 		d = new TimedSprite
@@ -247,6 +285,7 @@ end for
 heartbeat.updateInterval
 score = 0
 lives = 2
+ship.destroyed = true
 drawScore
 
 // Main loop
@@ -263,3 +302,7 @@ while true
 		ship.respawn
 	end if
 end while
+
+text.row = 14; text.column = 30
+print "GAME OVER"
+text.row = 1
