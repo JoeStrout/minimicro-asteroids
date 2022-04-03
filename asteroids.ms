@@ -89,11 +89,11 @@ ship.update = function(dt)
 	radians = self.rotation * pi/180
 	self.v.x = self.v.x + cos(radians) * thrust * self.acceleration * dt
 	self.v.y = self.v.y + sin(radians) * thrust * self.acceleration * dt
-	if thrust and not self.thrusting then
+	if thrust > 0 and not self.thrusting then
 		self.image = images.shipThrusting
 		engineNoise.play 0.1
 		self.thrusting = true
-	else if self.thrusting and not thrust then
+	else if self.thrusting and thrust == 0 then
 		self.image = images.ship
 		engineNoise.stop
 		self.thrusting = false
