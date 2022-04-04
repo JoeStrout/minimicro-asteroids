@@ -301,6 +301,7 @@ while true
 		if lives < 0 then break
 		ship.respawn
 	end if
+	yield
 end while
 
 text.row = 14; text.column = 30
