@@ -176,7 +176,27 @@ Bullet.destroy = function
 	Bullet.instances.removeVal self
 end function
 
-Rock = new GameSprite
+Enemy = new GameSprite
+Enemy.spin = 0
+Enemy.scoreValue = 100
+Enemy.update = function(dt)
+	self.rotation = self.rotation + self.spin * dt
+	if self.overlaps(ship) and not ship.destroyed then
+		ship.destroy
+		self.destroy
+	else
+		for b in Bullet.instances
+			if self.contains(b) then
+				addPoints self.scoreValue
+				self.destroy
+				b.destroy
+			end if
+		end for	
+	end if
+	super.update dt	
+end function
+
+Rock = new Enemy
 Rock.size = 0
 Rock.init = function(size=0)
 	super.init
@@ -186,6 +206,9 @@ Rock.init = function(size=0)
 	self.localBounds.width = self.image.width * 0.75
 	self.localBounds.height = self.image.height * 0.75	
 	self.spin = 360 * (rnd - 0.5)
+end function
+Rock.scoreValue = function
+	return [20, 50, 100][self.size]
 end function
 Rock.destroy = function
 	super.destroy
@@ -197,22 +220,6 @@ Rock.destroy = function
 		Rock.make self.size+1, self
 	end if
 	heartbeat.updateInterval
-end function
-Rock.update = function(dt)
-	self.rotation = self.rotation + self.spin * dt
-	if self.overlaps(ship) and not ship.destroyed then
-		ship.destroy
-		self.destroy
-	else
-		for b in Bullet.instances
-			if self.contains(b) then
-				addPoints 50 + 100 * self.size
-				self.destroy
-				b.destroy
-			end if
-		end for	
-	end if
-	super.update dt
 end function
 Rock.make = function(size=0, position=null)
 	rock = new Rock
@@ -228,6 +235,43 @@ Rock.make = function(size=0, position=null)
 	rock.v.y = (rnd-0.5) * 300
 end function
 
+Ufo = new Enemy
+Ufo.image = images.ufo
+Ufo.tint = "#FF4444"
+Ufo.localBounds = new Bounds
+Ufo.localBounds.width = 72
+Ufo.localBounds.height = 40
+Ufo.scoreValue = 500   // ToDo: 200 vs 1000 for small/large UFO
+Ufo.spawn = function
+	if rnd > 0.5 then
+		self.x = 1020
+		self.v.x = round(mathUtil.randRange(-100, -40))
+	else
+		self.x = -60
+		self.v.x = round(mathUtil.randRange(100, 40))
+	end if
+	self.y = round(mathUtil.randRange(100, 540))
+	if display(4).sprites.indexOf(self) == null then
+		display(4).sprites.push self
+	end if
+	Ufo.nextSpawnTime = time + mathUtil.randRange(10,35)
+end function
+Ufo.despawn = function
+	display(4).sprites.removeVal self
+end function
+Ufo.update = function(dt)
+	super.update dt
+	if self.x < -110 or self.x > 1010 then
+		self.despawn
+	end if
+end function
+Ufo.destroy = function
+	super.destroy
+	hit.play 1, (self.x - 480)/480, 0.4
+	makeDebris self
+	heartbeat.updateInterval
+end function
+
 safeToRespawn = function
 	for sp in display(4).sprites
 		if sp isa Rock and sp.overlaps(ship.respawnArea) then return false
@@ -235,12 +279,12 @@ safeToRespawn = function
 	return true
 end function
 
-makeDebris = function(pos)
+makeDebris = function(source)
 	for i in range(10)
 		d = new TimedSprite
 		d.init
 		d.image = images.debris
-		d.x = pos.x; d.y = pos.y
+		d.x = source.x; d.y = source.y; d.tint = source.tint
 		d.v.x = (rnd-0.5) * 300
 		d.v.y = (rnd-0.5) * 300		
 	end for
@@ -254,7 +298,7 @@ heartbeat.updateInterval = function
 	// count rocks to adjust heartbeat
 	count = 0
 	for sp in display(4).sprites
-		if sp isa Rock then count = count + 1
+		if sp isa Enemy then count = count + 1
 	end for
 	self.interval = mathUtil.clamp(1.25 - count * 0.1, 0.25, 1.25)
 	if count == 0 and not nextLevelTime then
@@ -290,6 +334,7 @@ startLevel = function
 	heartbeat.updateInterval
 	drawScore
 	globals.nextLevelTime = 0
+	Ufo.nextSpawnTime = time + mathUtil.randRange(5,15)
 end function
 
 level = 0
@@ -297,6 +342,8 @@ score = 0
 ship.destroyed = true
 lives = 2
 startLevel
+Ufo.init
+
 
 // Main loop
 lastTime = time
@@ -311,9 +358,8 @@ while true
 		if lives < 0 then break
 		ship.respawn
 	end if
-	if nextLevelTime and time > nextLevelTime then
-		startLevel
-	end if
+	if nextLevelTime and time > nextLevelTime then startLevel
+	if time > Ufo.nextSpawnTime then Ufo.spawn
 	yield
 end while
 
