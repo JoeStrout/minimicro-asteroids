@@ -257,6 +257,9 @@ heartbeat.updateInterval = function
 		if sp isa Rock then count = count + 1
 	end for
 	self.interval = mathUtil.clamp(1.25 - count * 0.1, 0.25, 1.25)
+	if count == 0 and not nextLevelTime then
+		globals.nextLevelTime = time + 3
+	end if
 end function
 heartbeat.update = function(dt)
 	if time > self.nextPlayTime then
@@ -277,16 +280,23 @@ addPoints = function(points)
 	drawScore
 end function
 
-// Board setup
-ship.reset
-for i in range(0,7)
-	Rock.make
-end for
-heartbeat.updateInterval
+startLevel = function
+	globals.level = level + 1
+	// Board setup
+	ship.reset
+	for i in range(0,7)
+		Rock.make
+	end for
+	heartbeat.updateInterval
+	drawScore
+	globals.nextLevelTime = 0
+end function
+
+level = 0
 score = 0
-lives = 2
 ship.destroyed = true
-drawScore
+lives = 2
+startLevel
 
 // Main loop
 lastTime = time
@@ -301,9 +311,13 @@ while true
 		if lives < 0 then break
 		ship.respawn
 	end if
+	if nextLevelTime and time > nextLevelTime then
+		startLevel
+	end if
 	yield
 end while
 
 text.row = 14; text.column = 30
 print "GAME OVER"
 text.row = 1
+key.clear
