@@ -30,6 +30,11 @@ hit = file.loadSound("/sys/sounds/hit.wav")
 engineNoise = new Sound
 engineNoise.init 3, 1, 1, Sound.noiseWave
 engineNoise.loop = true
+ufoSound = new Sound
+ufoSound.init 2, 
+  [noteFreq(80), noteFreq(76), noteFreq(80), noteFreq(80)]*10, 0.25
+ufoSound.loop = true
+ufoSound.fadeIn = 0; ufoSound.fadeOut = 0
 
 GameSprite = new Sprite
 GameSprite.scale = 0.5
@@ -167,8 +172,8 @@ end function
 Bullet = new TimedSprite
 Bullet.image = images.bullet
 Bullet.instances = []
-Bullet.init = function
-	super.init 0.6
+Bullet.init = function(lifetime = 0.6)
+	super.init lifetime
 	Bullet.instances.push self
 end function
 Bullet.destroy = function
@@ -242,35 +247,72 @@ Ufo.localBounds = new Bounds
 Ufo.localBounds.width = 72
 Ufo.localBounds.height = 40
 Ufo.scoreValue = 500   // ToDo: 200 vs 1000 for small/large UFO
+Ufo.volume = 0
+Ufo.nextFireTime = 0
 Ufo.spawn = function
 	if rnd > 0.5 then
 		self.x = 1020
-		self.v.x = round(mathUtil.randRange(-100, -40))
+		self.v.x = round(mathUtil.randRange(-150, -50))
 	else
 		self.x = -60
-		self.v.x = round(mathUtil.randRange(100, 40))
+		self.v.x = round(mathUtil.randRange(50, 150))
 	end if
 	self.y = round(mathUtil.randRange(100, 540))
 	if display(4).sprites.indexOf(self) == null then
 		display(4).sprites.push self
 	end if
-	Ufo.nextSpawnTime = time + mathUtil.randRange(10,35)
+	Ufo.nextSpawnTime = time + mathUtil.randRange(20,45)
+	self.volume = 0.01
+	ufoSound.stop
+	ufoSound.play self.volume, (self.x - 480)/480
+	self.nextFireTime = time + mathUtil.randRange(5, 10)
 end function
 Ufo.despawn = function
 	display(4).sprites.removeVal self
+	ufoSound.stop
 end function
 Ufo.update = function(dt)
 	super.update dt
-	if self.x < -110 or self.x > 1010 then
+	self.volume = mathUtil.moveTowards(self.volume, 0.5, dt)
+	ufoSound.adjust self.volume, (self.x - 480)/480
+	if self.x < -110 or self.x > 1070 then
 		self.despawn
+	else if time > self.nextFireTime then
+		self.fire
 	end if
+end function
+Ufo.fire = function
+	if not ship.destroyed then
+		b = new UfoBullet
+		b.init 0.8
+		radians = atan(ship.y - self.y, ship.x - self.x)
+		b.x = self.x + cos(radians)*16
+		b.y = self.y + sin(radians)*16
+		b.v.x = cos(radians)*500
+		b.v.y = sin(radians)*500
+		pew.play 1, (self.x - 480)/480, 0.6
+	end if
+	self.nextFireTime = time + mathUtil.randRange(0.5, 1)
 end function
 Ufo.destroy = function
 	super.destroy
+	ufoSound.stop
 	hit.play 1, (self.x - 480)/480, 0.4
 	makeDebris self
 	heartbeat.updateInterval
 end function
+
+UfoBullet = new Bullet
+UfoBullet.image = images.ufoBullet
+UfoBullet.tint = Ufo.tint
+UfoBullet.update = function(dt)
+	super.update dt
+	if ship.contains(self) and not ship.destroyed then
+		ship.destroy
+		self.destroy
+	end if
+end function
+
 
 safeToRespawn = function
 	for sp in display(4).sprites
@@ -343,6 +385,7 @@ ship.destroyed = true
 lives = 2
 startLevel
 Ufo.init
+Ufo.despawn
 
 
 // Main loop
@@ -365,5 +408,6 @@ end while
 
 text.row = 14; text.column = 30
 print "GAME OVER"
+Sound.stopAll
 text.row = 1
 key.clear
